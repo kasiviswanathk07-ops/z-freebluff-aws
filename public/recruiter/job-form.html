@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job posting form — Recruiter</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="recruiter-job-form">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <p><a href="/recruiter/jobs.html">← All postings</a></p>
+    <div class="page-head">
+      <div>
+        <h1 id="formTitle">New job posting</h1>
+        <div class="sub">Set the role details and eligibility criteria. The placement cell reviews every posting.</div>
+      </div>
+    </div>
+    <div id="topNote"></div>
+
+    <form id="jobForm">
+      <div class="grid" style="grid-template-columns: 2fr 1fr; align-items:start">
+        <div class="card">
+          <h2>Role details</h2>
+          <div class="form-grid">
+            <div class="field full">
+              <label for="title">Job title <span class="req">*</span></label>
+              <input id="title" required placeholder="e.g. Software Engineer Intern">
+            </div>
+            <div class="field">
+              <label for="type">Type <span class="req">*</span></label>
+              <select id="type"><option>Internship</option><option>Full-time</option></select>
+            </div>
+            <div class="field">
+              <label for="workMode">Work mode</label>
+              <select id="workMode"><option>On-site</option><option>Hybrid</option><option>Remote</option></select>
+            </div>
+            <div class="field">
+              <label for="location">Location</label>
+              <input id="location" placeholder="e.g. Bengaluru, KA">
+            </div>
+            <div class="field">
+              <label for="ctc">Compensation</label>
+              <input id="ctc" placeholder="e.g. ₹30,000/month stipend or ₹12 LPA">
+            </div>
+            <div class="field">
+              <label for="openings">Number of openings</label>
+              <input id="openings" type="number" min="1" placeholder="e.g. 4">
+            </div>
+            <div class="field">
+              <label for="deadline">Application deadline <span class="req">*</span></label>
+              <input id="deadline" type="date" required>
+            </div>
+            <div class="field full">
+              <label for="description">Role description</label>
+              <textarea id="description" placeholder="What the role involves, team, growth path…"></textarea>
+            </div>
+            <div class="field full">
+              <label for="responsibilities">Responsibilities (one per line)</label>
+              <textarea id="responsibilities" placeholder="Build REST APIs&#10;Write tests"></textarea>
+            </div>
+            <div class="field full">
+              <label for="skills">Skills (comma separated)</label>
+              <input id="skills" placeholder="JavaScript, Node.js, SQL">
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h2>Eligibility criteria</h2>
+            <p class="muted small">The server blocks submissions from students who don't meet these.</p>
+            <div class="field">
+              <label for="minCgpa">Minimum CGPA</label>
+              <input id="minCgpa" type="number" step="0.1" min="0" max="10" placeholder="e.g. 7.5">
+            </div>
+            <div class="field">
+              <label for="maxBacklogs">Maximum active backlogs</label>
+              <input id="maxBacklogs" type="number" min="0" placeholder="e.g. 0">
+            </div>
+            <div class="field">
+              <label>Allowed departments</label>
+              <div class="check-grid" id="branches"></div>
+            </div>
+            <div class="field">
+              <label>Graduation years</label>
+              <div class="check-grid" id="years" style="grid-template-columns:repeat(3,1fr)"></div>
+            </div>
+          </div>
+          <div class="card mt">
+            <div id="formError"></div>
+            <button class="btn primary block" type="submit" id="submitBtn">Submit posting for review</button>
+            <p class="muted small" style="margin:10px 0 0" id="editNote"></p>
+          </div>
+        </div>
+      </div>
+    </form>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard, param } from '/js/api.js';
+    import { esc, mountAppbar, mountFooter, toast } from '/js/ui.js';
+
+    const s = await guard('recruiter');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/recruiter/jobs.html');
+    mountFooter();
+
+    const editId = param('id');
+    const meta = await api('/api/meta');
+
+    const branchWrap = document.getElementById('branches');
+    for (const b of meta.branches) {
+      branchWrap.insertAdjacentHTML('beforeend',
+        `<label><input type="checkbox" name="branch" value="${esc(b)}"> ${esc(b)}</label>`);
+    }
+    const yearWrap = document.getElementById('years');
+    for (const y of [2025, 2026, 2027, 2028]) {
+      yearWrap.insertAdjacentHTML('beforeend',
+        `<label><input type="checkbox" name="gradyear" value="${y}"> ${y}</label>`);
+    }
+
+    // default deadline: 21 days out
+    const defaultDeadline = new Date(Date.now() + 21 * 86400000).toISOString().slice(0, 10);
+    document.getElementById('deadline').value = defaultDeadline;
+
+    let existing = null;
+    if (editId) {
+      const { job } = await api(`/api/recruiter/jobs/${encodeURIComponent(editId)}`);
+      existing = job;
+      document.getElementById('formTitle').textContent = `Edit — ${job.title}`;
+      document.getElementById('submitBtn').textContent = 'Save changes';
+      const val = (id, v) => (document.getElementById(id).value = v ?? '');
+      val('title', job.title); val('type', job.type); val('workMode', job.workMode);
+      val('location', job.location); val('ctc', job.ctc);
+      val('openings', job.openings ?? ''); val('deadline', job.deadline);
+      val('description', job.description);
+      val('responsibilities', (job.responsibilities || []).join('\n'));
+      val('skills', (job.skills || []).join(', '));
+      val('minCgpa', job.eligibility?.minCgpa ?? '');
+      val('maxBacklogs', job.eligibility?.maxBacklogs ?? '');
+      for (const b of job.eligibility?.allowedBranches || []) {
+        const box = branchWrap.querySelector(`input[value="${CSS.escape(b)}"]`);
+        if (box) box.checked = true;
+      }
+      for (const y of job.eligibility?.graduationYears || []) {
+        const box = yearWrap.querySelector(`input[value="${y}"]`);
+        if (box) box.checked = true;
+      }
+      document.getElementById('topNote').innerHTML = job.status === 'approved'
+        ? '<div class="banner warn"><b>This posting is live</b>Saving your edits sends it back to the placement cell for re-approval before students see the changes.</div>'
+        : `<div class="banner warn"><b>Current status: ${esc(job.status)}</b>${job.status === 'rejected' && job.decision ? ` Reason: ${esc(job.decision.reason || '—')}` : ' It will (re)enter the placement cell review queue when saved.'}</div>`;
+      document.getElementById('editNote').textContent = `Created ${new Date(job.createdAt).toLocaleDateString()} · status: ${job.status}`;
+    }
+
+    document.getElementById('jobForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const box = document.getElementById('formError');
+      box.innerHTML = '';
+      const v = (id) => document.getElementById(id).value.trim();
+      const body = {
+        title: v('title'),
+        type: v('type'),
+        workMode: v('workMode'),
+        location: v('location'),
+        ctc: v('ctc'),
+        openings: v('openings'),
+        deadline: v('deadline'),
+        description: v('description'),
+        responsibilities: v('responsibilities').split('\n').map((x) => x.trim()).filter(Boolean),
+        skills: v('skills') ? v('skills').split(',').map((x) => x.trim()).filter(Boolean) : [],
+        eligibility: {
+          minCgpa: v('minCgpa'),
+          maxBacklogs: v('maxBacklogs'),
+          allowedBranches: [...branchWrap.querySelectorAll('input:checked')].map((x) => x.value),
+          graduationYears: [...yearWrap.querySelectorAll('input:checked')].map((x) => Number(x.value))
+        }
+      };
+      try {
+        if (existing) {
+          const res = await api(`/api/recruiter/jobs/${encodeURIComponent(existing.id)}`, { method: 'PUT', body });
+          toast(res.resubmitted ? 'Saved — posting returned to the review queue.' : 'Posting saved — awaiting approval.');
+        } else {
+          await api('/api/recruiter/jobs', { method: 'POST', body });
+          toast('Posting created — now in the placement cell approval queue.');
+        }
+        setTimeout(() => (location.href = '/recruiter/jobs.html'), 900);
+      } catch (err) {
+        box.innerHTML = `<div class="banner danger">${esc(err.message)}</div>`;
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }
+    });
+  </script>
+</body>
+</html>

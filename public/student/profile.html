@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Profile — Student</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="student-profile">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <div class="page-head">
+      <div>
+        <h1>My profile</h1>
+        <div class="sub">These details drive the server-side eligibility checks for every posting.</div>
+      </div>
+    </div>
+    <div id="banner"></div>
+    <div class="grid" style="grid-template-columns: 2fr 1fr; align-items:start">
+      <div class="card">
+        <form id="profileForm">
+          <div class="form-grid">
+            <div class="field">
+              <label>Name (account)</label>
+              <input id="name" disabled>
+            </div>
+            <div class="field">
+              <label>Email (account)</label>
+              <input id="email" disabled>
+            </div>
+            <div class="field">
+              <label for="rollNo">Roll number</label>
+              <input id="rollNo" placeholder="e.g. CS21B102">
+            </div>
+            <div class="field">
+              <label for="branch">Department / branch <span class="req">*</span></label>
+              <select id="branch"><option value="">Select…</option></select>
+            </div>
+            <div class="field">
+              <label for="cgpa">CGPA (out of 10) <span class="req">*</span></label>
+              <input id="cgpa" type="number" step="0.01" min="0" max="10" placeholder="e.g. 8.4">
+            </div>
+            <div class="field">
+              <label for="graduationYear">Graduation year <span class="req">*</span></label>
+              <input id="graduationYear" type="number" min="2024" max="2032" placeholder="e.g. 2026">
+            </div>
+            <div class="field">
+              <label for="backlogs">Active backlogs</label>
+              <input id="backlogs" type="number" min="0" placeholder="0">
+            </div>
+            <div class="field">
+              <label for="phone">Phone</label>
+              <input id="phone" placeholder="+91 …">
+            </div>
+            <div class="field full">
+              <label for="resumeUrl">Resume link <span class="req">*</span></label>
+              <input id="resumeUrl" type="url" placeholder="https://drive.google.com/…">
+              <div class="hint">Recruiters see this link when screening your application.</div>
+            </div>
+            <div class="field full">
+              <label for="skills">Skills (comma separated)</label>
+              <input id="skills" placeholder="JavaScript, SQL, Git">
+            </div>
+            <div class="field full">
+              <label for="about">About</label>
+              <textarea id="about" placeholder="Short bio, achievements, interests…"></textarea>
+            </div>
+          </div>
+          <div id="formError"></div>
+          <button class="btn primary" type="submit">Save profile</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Eligibility readiness</h2>
+        <p class="muted small">Complete all four core fields so the portal can evaluate you against posting criteria.</p>
+        <ul class="check-list" id="readiness"></ul>
+      </div>
+    </div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard } from '/js/api.js';
+    import { esc, mountAppbar, mountFooter, toast } from '/js/ui.js';
+
+    const s = await guard('student');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/student/profile.html');
+    mountFooter();
+
+    if (new URLSearchParams(location.search).get('welcome')) {
+      document.getElementById('banner').innerHTML =
+        '<div class="banner success"><b>Account created 🎉</b> Fill in your academic details to unlock job applications.</div>';
+    }
+
+    const meta = await api('/api/meta');
+    const branchSel = document.getElementById('branch');
+    for (const b of meta.branches) branchSel.insertAdjacentHTML('beforeend', `<option value="${esc(b)}">${esc(b)}</option>`);
+
+    const { profile } = await api('/api/student/profile');
+    const val = (id, v) => (document.getElementById(id).value = v ?? '');
+    val('name', s.user.name);
+    val('email', s.user.email);
+    if (profile) {
+      val('rollNo', profile.rollNo);
+      val('branch', profile.branch);
+      val('cgpa', profile.cgpa ?? '');
+      val('graduationYear', profile.graduationYear ?? '');
+      val('backlogs', profile.backlogs ?? '');
+      val('phone', profile.phone);
+      val('resumeUrl', profile.resumeUrl);
+      val('skills', (profile.skills || []).join(', '));
+      val('about', profile.about);
+    }
+
+    function renderReadiness() {
+      const checks = [
+        ['Branch selected', !!document.getElementById('branch').value],
+        ['CGPA filled in', Number(document.getElementById('cgpa').value) > 0],
+        ['Graduation year filled in', !!document.getElementById('graduationYear').value],
+        ['Resume link added', /^https?:\/\/\S+$/i.test(document.getElementById('resumeUrl').value.trim())]
+      ];
+      document.getElementById('readiness').innerHTML = checks
+        .map(([label, pass]) => `<li><span class="ico ${pass ? 'pass' : 'fail'}">${pass ? '✓' : '✗'}</span><span>${esc(label)}</span></li>`)
+        .join('');
+    }
+    document.getElementById('profileForm').addEventListener('input', renderReadiness);
+    renderReadiness();
+
+    document.getElementById('profileForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const box = document.getElementById('formError');
+      box.innerHTML = '';
+      const v = (id) => document.getElementById(id).value.trim();
+      try {
+        await api('/api/student/profile', {
+          method: 'PUT',
+          body: {
+            rollNo: v('rollNo'),
+            branch: v('branch'),
+            cgpa: v('cgpa'),
+            graduationYear: v('graduationYear'),
+            backlogs: v('backlogs'),
+            phone: v('phone'),
+            resumeUrl: v('resumeUrl'),
+            skills: v('skills') ? v('skills').split(',').map((x) => x.trim()).filter(Boolean) : [],
+            about: v('about')
+          }
+        });
+        toast('Profile saved — eligibility checks will use these details.');
+        renderReadiness();
+      } catch (err) {
+        box.innerHTML = `<div class="banner danger">${esc(err.message)}</div>`;
+      }
+    });
+  </script>
+</body>
+</html>

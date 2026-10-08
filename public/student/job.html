@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job details — Student</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="student-job">
+  <header id="appbar" class="appbar"></header>
+  <main class="container" id="main">
+    <div class="skeleton">Loading posting…</div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard, param } from '/js/api.js';
+    import { esc, badge, fmtDate, daysLeft, mountAppbar, mountFooter, toast, modal, errorMessage } from '/js/ui.js';
+
+    const s = await guard('student');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/student/jobs.html');
+    mountFooter();
+
+    const id = param('id');
+    const main = document.getElementById('main');
+    const data = await api(`/api/student/jobs/${encodeURIComponent(id)}`);
+    const { job, applied, applicationId, applicationStatus, eligibility } = data;
+    const dl = daysLeft(job.deadline);
+
+    function checkList(checks) {
+      return `<ul class="check-list">
+        ${checks.map((c) => `
+          <li>
+            <span class="ico ${c.pass ? 'pass' : 'fail'}">${c.pass ? '✓' : '✗'}</span>
+            <span><b>${esc(c.label)}</b>
+              <span class="why">Required: ${esc(String(c.required))} · You: ${esc(String(c.actual))}</span>
+              ${!c.pass && c.hint ? `<span class="why">${esc(c.hint)}</span>` : ''}
+            </span>
+          </li>`).join('')}
+      </ul>`;
+    }
+
+    main.innerHTML = `
+      <p><a href="/student/jobs.html">← Back to all openings</a></p>
+      <div class="page-head">
+        <div>
+          <h1>${esc(job.title)}</h1>
+          <div class="sub">${esc(job.companyName)} · ${esc(job.location || '—')} · Posted for ${esc(String(job.openings ?? '—'))} opening(s)</div>
+        </div>
+        <div class="row">${badge(job.type)}${badge(job.workMode)}</div>
+      </div>
+
+      <div class="grid" style="grid-template-columns: 2fr 1fr; align-items:start">
+        <div>
+          <div class="card">
+            <h2>About the role</h2>
+            <p>${esc(job.description)}</p>
+            <div class="job-meta mb">
+              <span>💰 ${esc(job.ctc || 'As per company policy')}</span>
+              <span>⏳ Apply by <b>${fmtDate(job.deadline)}</b>${dl !== null && !job.deadlinePassed ? ` (${dl} day${dl === 1 ? '' : 's'} left)` : ''}</span>
+            </div>
+            ${job.responsibilities && job.responsibilities.length ? `
+              <h3>Responsibilities</h3>
+              <ul style="margin:0 0 12px 18px">${job.responsibilities.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+            ${job.skills && job.skills.length ? `<div class="chips">${job.skills.map((sk) => `<span class="chip">${esc(sk)}</span>`).join('')}</div>` : ''}
+          </div>
+
+          <div class="card mt">
+            <h2>Eligibility criteria</h2>
+            <p class="muted small">Evaluated server-side when you submit — this is a live preview for your profile.</p>
+            ${checkList(eligibility.checks)}
+          </div>
+        </div>
+
+        <div class="card" id="applyCard">
+          <h2>Apply</h2>
+          ${applied
+            ? `<p>You applied on this posting.</p>
+               <p>${badge(applicationStatus)}</p>
+               <a class="btn primary block" href="/student/application.html?id=${esc(applicationId)}">Track application</a>`
+            : eligibility.eligible
+              ? `<p class="muted small">All checks passed — you can submit your application now.</p>
+                 <button class="btn primary block" id="applyBtn">Submit application</button>`
+              : `<div class="banner danger" style="margin:0 0 12px"><b>Ineligible</b>${eligibility.blockers.length ? `<ul>${eligibility.blockers.slice(0, 3).map((b) => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}</div>
+                 <button class="btn block" id="applyBtn" disabled title="Blocked by server-side eligibility check">Application blocked</button>
+                 <a class="btn block mt" href="/student/profile.html">Review my profile</a>`}
+        </div>
+      </div>`;
+
+    const applyBtn = document.getElementById('applyBtn');
+    if (applyBtn && !applyBtn.disabled) {
+      applyBtn.addEventListener('click', async () => {
+        applyBtn.disabled = true;
+        try {
+          await api('/api/student/applications', { method: 'POST', body: { jobId: job.id } });
+          toast('Application submitted!');
+          location.reload();
+        } catch (err) {
+          applyBtn.disabled = false;
+          if (err.status === 403 && err.data && err.data.checks) {
+            modal({
+              title: 'Application blocked',
+              width: 560,
+              body: `<div class="banner danger"><b>${esc(err.message)}</b></div>${checkList(err.data.checks)}`,
+              footer: '<button class="btn primary" data-close>Got it</button>'
+            }).overlay.querySelector('[data-close]').addEventListener('click', (e) => e.target.closest('.modal-overlay').remove());
+          } else {
+            toast(errorMessage(err), 'error');
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>

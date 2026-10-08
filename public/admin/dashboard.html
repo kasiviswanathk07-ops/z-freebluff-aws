@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — Placement Cell</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="admin-dashboard">
+  <header id="appbar" class="appbar"></header>
+  <main class="container" id="main">
+    <div class="skeleton">Loading…</div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard } from '/js/api.js';
+    import { esc, badge, fmtDateTime, mountAppbar, mountFooter, toast } from '/js/ui.js';
+
+    const s = await guard('admin');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/admin/dashboard.html');
+    mountFooter();
+
+    const main = document.getElementById('main');
+    const { stats, pendingCompanies, pendingJobs, recentLogs } = await api('/api/admin/overview');
+
+    async function decide(type, id, decision, idHint) {
+      let reason = '';
+      if (decision === 'reject') {
+        reason = prompt('Reason for rejection (required, shown to the recruiter/student):') || '';
+        if (!reason.trim()) return toast('Rejection needs a reason.', 'warn');
+      }
+      try {
+        const res = await api(`/api/admin/${type}/${encodeURIComponent(id)}/decision`, { method: 'POST', body: { decision, reason } });
+        toast(`${decision === 'approve' ? 'Approved' : 'Rejected'}${res.cascadedJobs ? ` (+${res.cascadedJobs} posting(s) auto-rejected)` : ''}. Action logged.`);
+        location.reload();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Placement cell console</h1>
+          <div class="sub">Approve companies and postings before they reach students. Every action is audit-logged.</div>
+        </div>
+        <a class="btn" href="/admin/logs.html">View audit logs</a>
+      </div>
+
+      <div class="grid cols-4">
+        <div class="stat accent"><div class="value">${(stats.companiesByStatus.pending || 0)}</div><div class="label">Companies awaiting review</div></div>
+        <div class="stat"><div class="value">${(stats.jobsByStatus.pending || 0)}</div><div class="label">Postings awaiting review</div></div>
+        <div class="stat"><div class="value">${stats.students}</div><div class="label">Registered students</div></div>
+        <div class="stat"><div class="value">${stats.applications}</div><div class="label">Applications · ${stats.offers} offers</div></div>
+      </div>
+
+      <div class="grid cols-2 mt">
+        <div class="card">
+          <div class="spread"><h2>Company approvals</h2><a class="small" href="/admin/companies.html">All →</a></div>
+          ${pendingCompanies.length ? pendingCompanies.map((c) => `
+            <div class="spread" style="padding:10px 0;border-bottom:1px dashed var(--line)">
+              <div><b>${esc(c.name)}</b><div class="small muted">${esc(c.industry || '—')} · ${esc(c.location || '—')} · ${c.pendingJobs} posting(s) queued</div></div>
+              <div class="row" style="gap:6px">
+                <button class="btn sm success" data-decide="companies" data-id="${esc(c.id)}" data-decision="approve">Approve</button>
+                <button class="btn sm danger" data-decide="companies" data-id="${esc(c.id)}" data-decision="reject">Reject</button>
+              </div>
+            </div>`).join('') : '<div class="empty">Queue is clear ✓</div>'}
+        </div>
+        <div class="card">
+          <div class="spread"><h2>Posting approvals</h2><a class="small" href="/admin/jobs.html">All →</a></div>
+          ${pendingJobs.length ? pendingJobs.map((j) => `
+            <div class="spread" style="padding:10px 0;border-bottom:1px dashed var(--line)">
+              <div><b>${esc(j.title)}</b><div class="small muted">${esc(j.companyName)} · min CGPA ${esc(String(j.eligibility?.minCgpa ?? '—'))}</div></div>
+              <div class="row" style="gap:6px">
+                <button class="btn sm success" data-decide="jobs" data-id="${esc(j.id)}" data-decision="approve" ${j.companyStatus !== 'approved' ? 'disabled title="Approve the company first"' : ''}>Approve</button>
+                <button class="btn sm danger" data-decide="jobs" data-id="${esc(j.id)}" data-decision="reject">Reject</button>
+              </div>
+            </div>`).join('') : '<div class="empty">Queue is clear ✓</div>'}
+        </div>
+      </div>
+
+      <div class="section-head"><h2>Recent admin activity</h2><a class="small" href="/admin/logs.html">Full audit log →</a></div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>When</th><th>Action</th><th>Entity</th><th>Reviewer</th><th>Reason</th></tr></thead>
+          <tbody>
+            ${recentLogs.map((l) => `
+              <tr>
+                <td class="nowrap">${fmtDateTime(l.timestamp)}</td>
+                <td>${badge(l.action.includes('approved') ? 'approved' : l.action.includes('rejected') ? 'rejected' : 'Applied')}</td>
+                <td>${esc(l.entityLabel || l.entityId || '—')}</td>
+                <td>${esc(l.actorName)} <small class="muted">(${esc(l.actorId)})</small></td>
+                <td class="small">${esc(l.reason || '—')}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    main.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-decide]');
+      if (!btn) return;
+      decide(btn.dataset.decide, btn.dataset.id, btn.dataset.decision);
+    });
+  </script>
+</body>
+</html>

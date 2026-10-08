@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audit logs — Placement Cell</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="admin-logs">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <div class="page-head">
+      <div>
+        <h1>Administrative action log</h1>
+        <div class="sub">Immutable record of every approval, rejection and pipeline transition, with reviewer IDs and timestamps.</div>
+      </div>
+      <button class="btn" id="refresh">↻ Refresh</button>
+    </div>
+
+    <div class="filters">
+      <select id="action" style="min-width:220px"><option value="">All actions</option></select>
+      <select id="entityType">
+        <option value="">All entity types</option>
+        <option value="company">Company</option>
+        <option value="job">Job posting</option>
+        <option value="application">Application</option>
+      </select>
+      <select id="actorRole">
+        <option value="">All reviewers</option>
+        <option value="admin">Admins</option>
+        <option value="recruiter">Recruiters</option>
+        <option value="student">Students</option>
+      </select>
+      <input class="search" id="q" placeholder="Search entity, reviewer, reason…">
+      <button class="btn primary sm" id="apply">Apply</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr>
+          <th style="width:170px">Timestamp</th><th>Action</th><th>Entity</th>
+          <th>Reviewer</th><th>Reviewer ID</th><th>Reason / details</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="muted small mt" id="count"></p>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard } from '/js/api.js';
+    import { esc, badge, fmtDateTime, mountAppbar, mountFooter } from '/js/ui.js';
+
+    const s = await guard('admin');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/admin/logs.html');
+    mountFooter();
+
+    const rows = document.getElementById('rows');
+    const actionSel = document.getElementById('action');
+
+    const ACTION_BADGE = {
+      'company.approved': 'approved', 'job.approved': 'approved', 'company.registered': 'Applied',
+      'company.rejected': 'rejected', 'job.rejected': 'rejected', 'application.status_changed': 'Under Review',
+      'application.withdrawn': 'Withdrawn', 'job.posted': 'Shortlisted', 'company.resubmitted': 'pending',
+      'job.resubmitted': 'pending', 'job.closed': 'closed', 'job.reopened': 'pending'
+    };
+
+    function render(data) {
+      if (!data.logs.length) {
+        rows.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="big">🗃️</div>No log entries match these filters.</div></td></tr>';
+      } else {
+        rows.innerHTML = data.logs.map((l) => `
+          <tr>
+            <td class="nowrap">${fmtDateTime(l.timestamp)}</td>
+            <td><span class="badge ${ACTION_BADGE[l.action] || 'b-gray'}">${esc(l.action)}</span></td>
+            <td><b>${esc(l.entityLabel || '—')}</b><br><small class="muted">${esc(l.entityType || '')} ${esc(l.entityId || '')}</small></td>
+            <td>${esc(l.actorName)}<br><small class="muted">${esc(l.actorRole || '')}</small></td>
+            <td><span class="code">${esc(l.actorId)}</span></td>
+            <td class="small">${esc(l.reason || '—')}
+              ${l.meta && l.meta.batch ? `<br><small class="muted">batch update · ${esc(l.meta.from)} → ${esc(l.meta.to)}</small>` : ''}
+              ${l.meta && l.meta.cascadedJobs ? `<br><small class="muted">${l.meta.cascadedJobs} posting(s) auto-rejected</small>` : ''}
+            </td>
+          </tr>`).join('');
+      }
+      document.getElementById('count').textContent = `Showing ${data.logs.length} of ${data.total} entries`;
+    }
+
+    async function loadActions() {
+      const data = await api('/api/admin/logs', { query: { limit: 1 } });
+      for (const a of data.actions) actionSel.insertAdjacentHTML('beforeend', `<option value="${esc(a)}">${esc(a)}</option>`);
+    }
+
+    async function load() {
+      const data = await api('/api/admin/logs', {
+        query: {
+          action: actionSel.value,
+          entityType: document.getElementById('entityType').value,
+          actorRole: document.getElementById('actorRole').value,
+          q: document.getElementById('q').value.trim()
+        }
+      });
+      render(data);
+    }
+
+    document.getElementById('apply').addEventListener('click', load);
+    document.getElementById('refresh').addEventListener('click', load);
+    document.getElementById('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
+    await loadActions();
+    await load();
+  </script>
+</body>
+</html>

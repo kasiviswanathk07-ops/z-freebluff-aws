@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Applicants — Recruiter</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="recruiter-applicants">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <div class="page-head">
+      <div>
+        <h1>Applicants</h1>
+        <div class="sub">Review candidate profiles and move them through the hiring pipeline — single or in batch.</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <select id="jobFilter" style="min-width:260px"><option value="">All postings</option></select>
+      <select id="statusFilter">
+        <option value="">All statuses</option>
+        <option>Applied</option><option>Under Review</option><option>Shortlisted</option>
+        <option>Interview</option><option>Offered</option><option>Rejected</option><option>Withdrawn</option>
+      </select>
+      <span class="muted small" id="count"></span>
+    </div>
+
+    <div class="card tight mb" id="bulkBar" hidden>
+      <div class="row">
+        <b id="bulkCount">0 selected</b>
+        <select id="bulkStatus" style="width:auto">
+          <option value="">Move to…</option>
+          <option>Under Review</option><option>Shortlisted</option><option>Interview</option><option>Offered</option><option>Rejected</option>
+        </select>
+        <input id="bulkNote" placeholder="Optional note added to every selected candidate's timeline…" style="flex:1;min-width:220px">
+        <button class="btn primary sm" id="bulkApply">Update selected</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr>
+          <th style="width:34px"><input type="checkbox" id="checkAll" aria-label="Select all"></th>
+          <th>Candidate</th><th>Posting</th><th>Applied</th><th>Status</th><th>Resume</th><th style="min-width:190px">Quick action</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard, param } from '/js/api.js';
+    import { esc, badge, fmtDate, fmtDateTime, mountAppbar, mountFooter, toast, modal, confirmModal } from '/js/ui.js';
+
+    const s = await guard('recruiter');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/recruiter/applicants.html');
+    mountFooter();
+
+    const jobFilter = document.getElementById('jobFilter');
+    const statusFilter = document.getElementById('statusFilter');
+    const rows = document.getElementById('rows');
+    const TRANSITIONS = ['Under Review', 'Shortlisted', 'Interview', 'Offered', 'Rejected'];
+
+    let apps = [];
+
+    async function loadJobs() {
+      const { jobs } = await api('/api/recruiter/jobs');
+      for (const j of jobs) {
+        jobFilter.insertAdjacentHTML('beforeend', `<option value="${esc(j.id)}">${esc(j.title)} (${j.applicantCount})</option>`);
+      }
+      const preselect = param('jobId');
+      if (preselect && jobs.some((j) => j.id === preselect)) jobFilter.value = preselect;
+    }
+
+    async function load() {
+      const jobId = jobFilter.value;
+      const url = jobId ? `/api/recruiter/jobs/${encodeURIComponent(jobId)}/applicants` : '/api/recruiter/applicants';
+      const data = await api(url);
+      apps = data.applications;
+      render();
+    }
+
+    function render() {
+      const filter = statusFilter.value;
+      const visible = filter ? apps.filter((a) => a.status === filter) : apps;
+      document.getElementById('count').textContent = `${visible.length} of ${apps.length} applications`;
+      if (!visible.length) {
+        rows.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="big">👥</div>No applications${filter ? ' with this status' : ' yet'}.</div></td></tr>`;
+        return;
+      }
+      rows.innerHTML = visible.map((a) => {
+        const st = a.student || {};
+        const canTransition = a.status !== 'Withdrawn';
+        return `<tr data-app="${esc(a.id)}">
+          <td><input type="checkbox" class="row-check" data-id="${esc(a.id)}" ${canTransition ? '' : 'disabled title="Withdrawn applications cannot be updated"'}></td>
+          <td>
+            <b>${esc(st.name || 'Unknown')}</b>
+            <div class="small muted">${esc(st.rollNo || '—')} · ${esc(st.branch || '—')} · CGPA <b>${esc(String(st.cgpa ?? '—'))}</b> · ${esc(String(st.graduationYear ?? '—'))}</div>
+          </td>
+          <td>${esc(a.job ? a.job.title : '—')}<br><small class="muted">${esc(a.job ? a.job.type : '')}</small></td>
+          <td class="nowrap">${fmtDate(a.createdAt)}</td>
+          <td>${badge(a.status)}</td>
+          <td>${st.resumeUrl ? `<a href="${esc(st.resumeUrl)}" target="_blank" rel="noopener">Resume ↗</a>` : '<span class="muted small">none</span>'}</td>
+          <td>
+            <div class="row" style="gap:6px">
+              <button class="btn sm" data-view="${esc(a.id)}">Profile</button>
+              ${canTransition ? `
+                <select class="quick-status" data-id="${esc(a.id)}" style="width:auto;padding:5px 8px;font-size:13px">
+                  <option value="">Move to…</option>
+                  ${TRANSITIONS.map((t) => `<option ${t === a.status ? 'disabled' : ''}>${t}</option>`).join('')}
+                </select>` : ''}
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    /* ---------- selection + batch bar ---------- */
+    function syncBulkBar() {
+      const checked = [...rows.querySelectorAll('.row-check:checked')];
+      document.getElementById('bulkBar').hidden = checked.length === 0;
+      document.getElementById('bulkCount').textContent = `${checked.length} selected`;
+    }
+    rows.addEventListener('change', (e) => {
+      if (e.target.classList.contains('row-check')) syncBulkBar();
+    });
+    document.getElementById('checkAll').addEventListener('change', (e) => {
+      rows.querySelectorAll('.row-check:not(:disabled)').forEach((box) => (box.checked = e.target.checked));
+      syncBulkBar();
+    });
+
+    async function updateStatus(ids, status, note) {
+      const res = await api('/api/recruiter/applications/status', { method: 'PATCH', body: { ids, status, note } });
+      if (res.updatedCount) toast(`${res.updatedCount} application${res.updatedCount === 1 ? '' : 's'} moved to ${status}.`);
+      for (const skip of res.skipped) toast(`Skipped: ${skip.reason}`, 'warn');
+      await load();
+      return res;
+    }
+
+    document.getElementById('bulkApply').addEventListener('click', async () => {
+      const ids = [...rows.querySelectorAll('.row-check:checked')].map((b) => b.dataset.id);
+      const status = document.getElementById('bulkStatus').value;
+      const note = document.getElementById('bulkNote').value.trim();
+      if (!ids.length) return toast('Select at least one application.', 'warn');
+      if (!status) return toast('Pick a target status.', 'warn');
+      if (status === 'Rejected' || status === 'Offered') {
+        const yes = await confirmModal({
+          title: `Move ${ids.length} application(s) to ${status}?`,
+          message: 'Every selected candidate gets a timeline entry with this status and note. This is logged in the audit trail.',
+          confirmText: `Confirm ${status}`
+        });
+        if (!yes) return;
+      }
+      try {
+        await updateStatus(ids, status, note);
+        document.getElementById('bulkNote').value = '';
+        document.getElementById('bulkStatus').value = '';
+        document.getElementById('checkAll').checked = false;
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+
+    rows.addEventListener('change', async (e) => {
+      const sel = e.target.closest('.quick-status');
+      if (!sel || !sel.value) return;
+      try {
+        await updateStatus([sel.dataset.id], sel.value, '');
+      } catch (err) {
+        toast(err.message, 'error');
+        await load();
+      }
+    });
+
+    /* ---------- candidate profile modal ---------- */
+    rows.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-view]');
+      if (!btn) return;
+      const { application: a } = await api(`/api/recruiter/applications/${encodeURIComponent(btn.dataset.view)}`);
+      const st = a.student || {};
+      const snap = a.profileSnapshot || {};
+      const changed = snap.cgpa != null && (Number(snap.cgpa) !== Number(st.cgpa) || snap.branch !== st.branch);
+      modal({
+        title: st.name || 'Candidate',
+        width: 660,
+        body: `
+          <div class="row mb">${badge(a.status)} ${a.job ? `<span class="muted small">Applied to <b>${esc(a.job.title)}</b></span>` : ''}</div>
+          <dl class="kv">
+            <dt>Email</dt><dd>${esc(st.email || '—')}</dd>
+            <dt>Phone</dt><dd>${esc(st.phone || '—')}</dd>
+            <dt>Roll no</dt><dd>${esc(st.rollNo || '—')}</dd>
+            <dt>Branch</dt><dd>${esc(st.branch || '—')}</dd>
+            <dt>CGPA</dt><dd>${esc(String(st.cgpa ?? '—'))}${changed ? ` <small class="muted">(was ${esc(String(snap.cgpa))} at application)</small>` : ''}</dd>
+            <dt>Graduation</dt><dd>${esc(String(st.graduationYear ?? '—'))}</dd>
+            <dt>Backlogs</dt><dd>${esc(String(st.backlogs ?? '—'))}</dd>
+            <dt>Resume</dt><dd>${st.resumeUrl ? `<a href="${esc(st.resumeUrl)}" target="_blank" rel="noopener">Open resume ↗</a>` : '—'}</dd>
+            <dt>Skills</dt><dd><div class="chips">${(st.skills || []).map((x) => `<span class="chip">${esc(x)}</span>`).join('') || '—'}</div></dd>
+            <dt>About</dt><dd>${esc(st.about || '—')}</dd>
+          </dl>
+          <hr class="divider">
+          <h3>Application timeline</h3>
+          <ul class="timeline">
+            ${[...a.timeline].reverse().map((t) => `
+              <li><span class="dot"></span>
+                <div class="tl-head">${badge(t.status)} <span class="when">${fmtDateTime(t.at)}</span></div>
+                ${t.note ? `<p class="note">${esc(t.note)}</p>` : ''}
+                <small>by ${esc(t.byName || '')} (${esc(t.byRole || '')})</small>
+              </li>`).join('')}
+          </ul>`,
+        footer: TRANSITIONS.filter((t) => t !== a.status && a.status !== 'Withdrawn')
+          .map((t) => `<button class="btn sm ${t === 'Rejected' ? 'danger' : t === 'Offered' ? 'success' : 'primary'}" data-move="${t}" data-id="${esc(a.id)}">${t}</button>`)
+          .join('')
+      }).overlay.addEventListener('click', async (e) => {
+        const move = e.target.closest('[data-move]');
+        if (!move) return;
+        try {
+          await updateStatus([move.dataset.id], move.dataset.move, '');
+          e.target.closest('.modal-overlay').remove();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+    });
+
+    jobFilter.addEventListener('change', load);
+    statusFilter.addEventListener('change', render);
+    await loadJobs();
+    await load();
+  </script>
+</body>
+</html>

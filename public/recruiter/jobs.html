@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job postings — Recruiter</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="recruiter-jobs">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <div class="page-head">
+      <div>
+        <h1>My job postings</h1>
+        <div class="sub">Every posting is reviewed by the placement cell before students can see it.</div>
+      </div>
+      <a class="btn primary" href="/recruiter/job-form.html">+ New posting</a>
+    </div>
+    <div id="companyNote"></div>
+    <div id="list"></div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard } from '/js/api.js';
+    import { esc, badge, fmtDate, fmtDateTime, daysLeft, mountAppbar, mountFooter, toast, confirmModal } from '/js/ui.js';
+
+    const s = await guard('recruiter');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/recruiter/jobs.html');
+    mountFooter();
+
+    async function load() {
+      const { jobs, company } = await api('/api/recruiter/jobs');
+      const note = document.getElementById('companyNote');
+      if (!company || company.status !== 'approved') {
+        note.innerHTML = `<div class="banner warn"><b>Heads up</b>
+          ${!company ? 'Create your company profile first.' : `Your company (${esc(company.name)}) is ${esc(company.status)} — postings will stay invisible to students until both are approved.`}</div>`;
+      }
+      const list = document.getElementById('list');
+      if (!jobs.length) {
+        list.innerHTML = '<div class="card"><div class="empty"><div class="big">🗂️</div>No postings yet — create your first one.</div></div>';
+        return;
+      }
+      list.innerHTML = `<div class="table-wrap"><table class="data">
+        <thead><tr><th>Role</th><th>Type</th><th>Deadline</th><th>Applicants</th><th>Status</th><th style="min-width:210px">Actions</th></tr></thead>
+        <tbody>
+          ${jobs.map((j) => {
+            const dl = daysLeft(j.deadline);
+            return `<tr>
+              <td><b>${esc(j.title)}</b><br><small class="muted">${esc(j.location || '—')} · created ${fmtDate(j.createdAt)}</small></td>
+              <td>${badge(j.type)}</td>
+              <td class="nowrap">${fmtDate(j.deadline)}${dl !== null && !j.deadlinePassed ? ` <small class="muted">(${dl}d)</small>` : ''}</td>
+              <td><a href="/recruiter/applicants.html?jobId=${esc(j.id)}">${j.applicantCount} applicant${j.applicantCount === 1 ? '' : 's'}</a></td>
+              <td>${badge(j.status)}${j.status === 'rejected' && j.decision ? `<br><small class="muted" title="${esc(j.decision.reason || '')}">${esc((j.decision.reason || '').slice(0, 40))}</small>` : ''}</td>
+              <td>
+                <div class="row" style="gap:6px">
+                  <a class="btn sm" href="/recruiter/applicants.html?jobId=${esc(j.id)}">Applicants</a>
+                  <a class="btn sm" href="/recruiter/job-form.html?id=${esc(j.id)}">Edit</a>
+                  ${j.status === 'closed'
+                    ? `<button class="btn sm" data-reopen="${esc(j.id)}">Reopen</button>`
+                    : `<button class="btn sm danger" data-close="${esc(j.id)}">Close</button>`}
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody></table></div>
+        <p class="muted small mt">Pending postings appear in the placement cell's approval queue. Closed postings accept no new applications.</p>`;
+
+      list.addEventListener('click', async (e) => {
+        const closeBtn = e.target.closest('[data-close]');
+        const reopenBtn = e.target.closest('[data-reopen]');
+        if (!closeBtn && !reopenBtn) return;
+        const id = closeBtn ? closeBtn.dataset.close : reopenBtn.dataset.reopen;
+        const closing = !!closeBtn;
+        const yes = await confirmModal({
+          title: closing ? 'Close posting' : 'Reopen posting',
+          message: closing
+            ? 'Close this posting? Students will no longer be able to apply, and existing applications stay visible.'
+            : 'Reopen this posting? It returns to the placement cell review queue before going live again.',
+          confirmText: closing ? 'Close posting' : 'Reopen',
+          danger: closing
+        });
+        if (!yes) return;
+        try {
+          await api(`/api/recruiter/jobs/${encodeURIComponent(id)}/${closing ? 'close' : 'reopen'}`, { method: 'POST' });
+          toast(closing ? 'Posting closed.' : 'Posting reopened — awaiting re-approval.', 'success');
+          await load();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      }, { once: true });
+    }
+    await load();
+  </script>
+</body>
+</html>

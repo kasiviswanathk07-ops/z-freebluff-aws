@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — Student</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="student-dashboard">
+  <header id="appbar" class="appbar"></header>
+  <main class="container" id="main">
+    <div class="skeleton">Loading your dashboard…</div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard } from '/js/api.js';
+    import { esc, badge, fmtDate, fmtDateTime, daysLeft, mountAppbar, mountFooter, toast } from '/js/ui.js';
+
+    const s = await guard('student');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/student/dashboard.html');
+    mountFooter();
+
+    const main = document.getElementById('main');
+    const data = await api('/api/student/dashboard');
+    const { stats, profileCompleteness, recommended, recent } = data;
+
+    const profileBanner = profileCompleteness < 100
+      ? `<div class="banner warn"><b>Your profile is ${profileCompleteness}% complete</b>
+           Branch, CGPA, graduation year and a resume link are required before you can apply.
+           <a href="/student/profile.html">Complete your profile →</a></div>`
+      : '';
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Welcome back, ${esc(s.user.name.split(' ')[0])} 👋</h1>
+          <div class="sub">Track your placement journey — everything you apply for shows up here.</div>
+        </div>
+        <a class="btn primary" href="/student/jobs.html">Browse open roles</a>
+      </div>
+      ${profileBanner}
+      <div class="grid cols-4">
+        <div class="stat accent"><div class="value">${stats.total}</div><div class="label">Applications</div></div>
+        <div class="stat"><div class="value">${stats.shortlisted}</div><div class="label">Shortlisted / Interviews</div></div>
+        <div class="stat"><div class="value">${stats.offers}</div><div class="label">Offers 🎉</div></div>
+        <div class="stat">
+          <div class="value">${profileCompleteness}%</div><div class="label">Profile completeness</div>
+          <div class="progress mt" style="margin-top:8px"><span style="width:${profileCompleteness}%"></span></div>
+        </div>
+      </div>
+
+      <div class="section-head">
+        <h2>Recommended for you</h2>
+        <a class="small" href="/student/jobs.html?eligible=1">View all eligible →</a>
+      </div>
+      <div class="grid cols-2" id="recommended">
+        ${recommended.length ? recommended.map((j) => `
+          <div class="card job-card">
+            <div class="job-top">
+              <div>
+                <div class="job-title"><a href="/student/job.html?id=${esc(j.id)}">${esc(j.title)}</a></div>
+                <small class="muted">${esc(j.companyName)} · ${esc(j.location || '—')}</small>
+              </div>
+              <span class="badge ${j.eligible ? 'b-green' : 'b-red'}">${j.eligible ? 'Eligible' : 'Not eligible'}</span>
+            </div>
+            <div class="job-meta">
+              <span>🏷️ ${esc(j.type)}</span><span>💼 ${esc(j.workMode)}</span>
+              <span>⏳ Apply by ${fmtDate(j.deadline)}</span><span>🎯 ${esc(String(j.eligibility.minCgpa ?? '—'))}+ CGPA</span>
+            </div>
+            <div class="job-foot">
+              <span class="eligibility-note ${j.eligible ? 'ok' : 'no'}">${j.eligible ? 'You meet all criteria' : esc(j.blockers[0] || '')}</span>
+              <a class="btn sm" href="/student/job.html?id=${esc(j.id)}">View details</a>
+            </div>
+          </div>`).join('') : '<div class="card"><div class="empty">No open postings right now — check back soon.</div></div>'}
+      </div>
+
+      <div class="section-head">
+        <h2>Recent applications</h2>
+        <a class="small" href="/student/applications.html">View all →</a>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Role</th><th>Company</th><th>Applied</th><th>Status</th><th>Last update</th><th></th></tr></thead>
+          <tbody>
+            ${recent.length ? recent.map((a) => `
+              <tr>
+                <td><a href="/student/application.html?id=${esc(a.id)}">${esc(a.job ? a.job.title : '—')}</a></td>
+                <td>${esc(a.job ? a.job.companyName : '—')}</td>
+                <td class="nowrap">${fmtDate(a.createdAt)}</td>
+                <td>${badge(a.status)}</td>
+                <td class="nowrap">${fmtDateTime(a.updatedAt)}</td>
+                <td><a class="btn sm" href="/student/application.html?id=${esc(a.id)}">Track</a></td>
+              </tr>`).join('') : '<tr><td colspan="6"><div class="empty">No applications yet — <a href="/student/jobs.html">browse open roles</a> to get started.</div></td></tr>'}
+          </tbody>
+        </table>
+      </div>`;
+  </script>
+</body>
+</html>

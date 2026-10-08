@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — CampusConnect Placement Portal</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="login">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="hero">
+          <h1>CampusConnect</h1>
+          <p>Campus Placement &amp; Internship Portal — separate, permission-bounded workspaces for
+            <b>Student Applicants</b>, <b>Company Recruiters</b> and the <b>Placement Cell</b>.</p>
+        </div>
+        <div class="card">
+          <h2>Sign in</h2>
+          <p class="muted small">Use your portal credentials or pick a demo role below.</p>
+          <form id="loginForm" novalidate>
+            <div class="field">
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" autocomplete="username" placeholder="you@campus.edu" required>
+            </div>
+            <div class="field">
+              <label for="password">Password</label>
+              <input id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+            </div>
+            <div id="loginError"></div>
+            <button class="btn primary block" type="submit" id="loginBtn">Sign in</button>
+          </form>
+          <hr class="divider">
+          <small class="muted">Demo accounts (one click to fill):</small>
+          <div class="demo-creds">
+            <button class="btn sm" data-fill="aarav@student.campus.edu|student123">🎓 Student</button>
+            <button class="btn sm" data-fill="priya@technova.io|recruiter123">🏢 Recruiter</button>
+            <button class="btn sm" data-fill="admin@campus.edu|admin123">🛡️ Admin</button>
+          </div>
+          <p class="small mt" style="margin-bottom:0">New here? <a href="/register.html">Create a student or recruiter account</a></p>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, session, dashboardFor } from '/js/api.js';
+    import { esc, mountFooter } from '/js/ui.js';
+
+    mountFooter();
+
+    // Already signed in? Go straight to the right workspace.
+    try {
+      const s = await session();
+      location.href = dashboardFor(s.user.role);
+    } catch { /* not signed in — show the form */ }
+
+    document.querySelectorAll('[data-fill]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const [email, password] = btn.dataset.fill.split('|');
+        document.getElementById('email').value = email;
+        document.getElementById('password').value = password;
+        document.getElementById('loginBtn').focus();
+      });
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const box = document.getElementById('loginError');
+      const btn = document.getElementById('loginBtn');
+      box.innerHTML = '';
+      btn.disabled = true;
+      try {
+        const s = await api('/api/auth/login', {
+          method: 'POST',
+          body: {
+            email: document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value
+          }
+        });
+        const next = new URLSearchParams(location.search).get('next');
+        const fallback = dashboardFor(s.user.role);
+        location.href = next && next.startsWith('/') ? next : fallback;
+      } catch (err) {
+        box.innerHTML = `<div class="banner danger">${esc(err.message)}</div>`;
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Company approvals — Placement Cell</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="admin-companies">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <div class="page-head">
+      <div>
+        <h1>Company approvals</h1>
+        <div class="sub">New registrations wait here until verified. Rejections require a reason and are audit-logged.</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <div class="row" id="tabs" style="gap:6px">
+        <button class="btn sm" data-status="">All</button>
+        <button class="btn sm" data-status="pending">Pending</button>
+        <button class="btn sm" data-status="approved">Approved</button>
+        <button class="btn sm" data-status="rejected">Rejected</button>
+      </div>
+      <input class="search" id="q" placeholder="Search company, industry…">
+      <button class="btn primary sm" id="refresh">Refresh</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Company</th><th>Industry / Location</th><th>Recruiter</th><th>Postings</th><th>Registered</th><th>Status</th><th style="min-width:170px">Actions</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard } from '/js/api.js';
+    import { esc, badge, fmtDate, fmtDateTime, mountAppbar, mountFooter, toast, modal } from '/js/ui.js';
+
+    const s = await guard('admin');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/admin/companies.html');
+    mountFooter();
+
+    let status = 'pending';
+    const rows = document.getElementById('rows');
+    const q = document.getElementById('q');
+
+    function setActiveTab() {
+      document.querySelectorAll('#tabs [data-status]').forEach((b) =>
+        b.classList.toggle('primary', b.dataset.status === status));
+    }
+
+    async function load() {
+      const data = await api('/api/admin/companies', { query: { status, q: q.value.trim() } });
+      if (!data.companies.length) {
+        rows.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="big">✅</div>No ${status || ''} companies.</div></td></tr>`;
+        return;
+      }
+      rows.innerHTML = data.companies.map((c) => `
+        <tr>
+          <td><b>${esc(c.name)}</b>${c.website ? `<br><a class="small" href="${esc(c.website)}" target="_blank" rel="noopener">${esc(c.website)}</a>` : ''}</td>
+          <td>${esc(c.industry || '—')}<br><small class="muted">${esc(c.location || '—')} · ${esc(c.size || '—')}</small></td>
+          <td>${esc(c.ownerName)}<br><small class="muted">${esc(c.ownerEmail)}</small></td>
+          <td>${c.jobCount} <small class="muted">(${c.pendingJobs} pending)</small></td>
+          <td class="nowrap">${fmtDate(c.createdAt)}</td>
+          <td>${badge(c.status)}${c.decision ? `<br><small class="muted" title="${esc(c.decision.reason || '')}">by ${esc(c.decision.byName || '—')}</small>` : ''}</td>
+          <td>
+            <div class="row" style="gap:6px">
+              <button class="btn sm" data-review="${esc(c.id)}">Review</button>
+              ${c.status !== 'approved' ? `<button class="btn sm success" data-decide="${esc(c.id)}" data-decision="approve">Approve</button>` : ''}
+              ${c.status !== 'rejected' ? `<button class="btn sm danger" data-decide="${esc(c.id)}" data-decision="reject">Reject</button>` : ''}
+            </div>
+          </td>
+        </tr>`).join('');
+    }
+
+    async function decide(id, decision, reason = '') {
+      try {
+        const res = await api(`/api/admin/companies/${encodeURIComponent(id)}/decision`, { method: 'POST', body: { decision, reason } });
+        toast(`${decision === 'approve' ? 'Company approved' : 'Company rejected'} — action recorded in the audit log.${res.cascadedJobs ? ` ${res.cascadedJobs} pending posting(s) auto-rejected.` : ''}`);
+        await load();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+
+    rows.addEventListener('click', async (e) => {
+      const decideBtn = e.target.closest('[data-decide]');
+      if (decideBtn) {
+        let reason = '';
+        if (decideBtn.dataset.decision === 'reject') {
+          reason = prompt('Reason for rejection (required, visible to the recruiter and audit log):') || '';
+          if (!reason.trim()) return toast('Rejection requires a reason.', 'warn');
+        } else {
+          reason = prompt('Review note (optional):', 'Verified company registration documents.') || '';
+        }
+        return decide(decideBtn.dataset.decide, decideBtn.dataset.decision, reason);
+      }
+
+      const reviewBtn = e.target.closest('[data-review]');
+      if (reviewBtn) {
+        const c = (await api('/api/admin/companies', { query: { q: '' } })).companies.find((x) => x.id === reviewBtn.dataset.review);
+        modal({
+          title: c.name,
+          width: 640,
+          body: `
+            <dl class="kv">
+              <dt>Status</dt><dd>${badge(c.status)}</dd>
+              <dt>Website</dt><dd>${c.website ? `<a href="${esc(c.website)}" target="_blank" rel="noopener">${esc(c.website)}</a>` : '—'}</dd>
+              <dt>Industry</dt><dd>${esc(c.industry || '—')}</dd>
+              <dt>Headquarters</dt><dd>${esc(c.location || '—')} · ${esc(c.size || '—')}</dd>
+              <dt>About</dt><dd>${esc(c.about || '—')}</dd>
+              <dt>HR contact</dt><dd>${esc(c.hrName || '—')} · ${esc(c.hrEmail || '—')} · ${esc(c.hrPhone || '—')}</dd>
+              <dt>Registered</dt><dd>${fmtDateTime(c.createdAt)}</dd>
+              ${c.decision ? `<dt>Last decision</dt><dd>${badge(c.decision.decision === 'approve' ? 'approved' : 'rejected')} by ${esc(c.decision.byName)} (${esc(c.decision.byId)}) on ${fmtDateTime(c.decision.at)}<br><small>${esc(c.decision.reason || '')}</small></dd>` : ''}
+            </dl>`,
+          footer: `
+            ${c.status !== 'approved' ? `<button class="btn success" data-modal-decide="${esc(c.id)}" data-decision="approve">Approve company</button>` : ''}
+            ${c.status !== 'rejected' ? `<button class="btn danger" data-modal-decide="${esc(c.id)}" data-decision="reject">Reject company</button>` : ''}
+            <button class="btn" data-close>Close</button>`
+        }).overlay.addEventListener('click', async (e) => {
+          if (e.target.matches('[data-close]')) return e.target.closest('.modal-overlay').remove();
+          const btn = e.target.closest('[data-modal-decide]');
+          if (!btn) return;
+          let reason = '';
+          if (btn.dataset.decision === 'reject') {
+            reason = prompt('Reason for rejection (required):') || '';
+            if (!reason.trim()) return toast('Rejection requires a reason.', 'warn');
+          }
+          e.target.closest('.modal-overlay').remove();
+          await decide(btn.dataset.modalDecide, btn.dataset.decision, reason);
+        });
+      }
+    });
+
+    document.getElementById('tabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-status]');
+      if (!btn) return;
+      status = btn.dataset.status;
+      setActiveTab();
+      load();
+    });
+    document.getElementById('refresh').addEventListener('click', load);
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
+    setActiveTab();
+    await load();
+  </script>
+</body>
+</html>

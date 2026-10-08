@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — Recruiter</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="recruiter-dashboard">
+  <header id="appbar" class="appbar"></header>
+  <main class="container" id="main">
+    <div class="skeleton">Loading…</div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard } from '/js/api.js';
+    import { esc, badge, fmtDate, fmtDateTime, mountAppbar, mountFooter } from '/js/ui.js';
+
+    const s = await guard('recruiter');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/recruiter/dashboard.html');
+    mountFooter();
+
+    const main = document.getElementById('main');
+    const data = await api('/api/recruiter/dashboard');
+    const { company, stats, recent } = data;
+
+    const banner = !company
+      ? '<div class="banner warn"><b>No company profile yet</b>Create your company profile to start posting jobs. <a href="/recruiter/company.html">Create now →</a></div>'
+      : company.status === 'pending'
+        ? `<div class="banner warn"><b>${esc(company.name)} is awaiting placement cell approval</b>
+             Your account works, but postings only go live after the placement cell approves your company. You can prepare job postings meanwhile.</div>`
+        : company.status === 'rejected'
+          ? `<div class="banner danger"><b>${esc(company.name)} was rejected by the placement cell</b>
+               Reason: ${esc((company.decision && company.decision.reason) || '—')} · <a href="/recruiter/company.html">Update & re-submit →</a></div>`
+          : `<div class="banner success"><b>${esc(company.name)} is approved ✓</b> Approved postings are visible to students.</div>`;
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div>
+          <h1>Recruiter workspace</h1>
+          <div class="sub">${esc(company ? company.name : 'Set up your company')} · ${esc(s.user.name)}</div>
+        </div>
+        <div class="row">
+          <a class="btn" href="/recruiter/company.html">Company profile</a>
+          <a class="btn primary" href="/recruiter/job-form.html">+ New posting</a>
+        </div>
+      </div>
+      ${banner}
+
+      <div class="grid cols-4">
+        <div class="stat accent"><div class="value">${stats.jobs}</div><div class="label">Job postings</div></div>
+        <div class="stat"><div class="value">${stats.applicants}</div><div class="label">Total applicants</div></div>
+        <div class="stat"><div class="value">${stats.shortlisted}</div><div class="label">In interview stages</div></div>
+        <div class="stat"><div class="value">${stats.offers}</div><div class="label">Offers made</div></div>
+      </div>
+
+      <div class="section-head">
+        <h2>Latest applicants</h2>
+        <a class="small" href="/recruiter/applicants.html">Review all →</a>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Candidate</th><th>Role</th><th>Status</th><th>Last update</th><th></th></tr></thead>
+          <tbody>
+            ${recent.length ? recent.map((a) => `
+              <tr>
+                <td><b>${esc(a.student ? a.student.name : '—')}</b><br><small>${esc(a.student ? `${a.student.branch || '—'} · CGPA ${a.student.cgpa ?? '—'}` : '')}</small></td>
+                <td>${esc(a.job ? a.job.title : '—')}</td>
+                <td>${badge(a.status)}</td>
+                <td class="nowrap">${fmtDateTime(a.updatedAt)}</td>
+                <td><a class="btn sm" href="/recruiter/applicants.html?jobId=${esc(a.job ? a.job.id : '')}">Open</a></td>
+              </tr>`).join('') : '<tr><td colspan="5"><div class="empty">No applications yet. Approved postings will start receiving applicants.</div></td></tr>'}
+          </tbody>
+        </table>
+      </div>`;
+  </script>
+</body>
+</html>

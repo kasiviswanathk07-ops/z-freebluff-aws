@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Track application — Student</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="student-application">
+  <header id="appbar" class="appbar"></header>
+  <main class="container" id="main">
+    <div class="skeleton">Loading application…</div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard, param } from '/js/api.js';
+    import { esc, badge, fmtDate, fmtDateTime, mountAppbar, mountFooter, toast, confirmModal } from '/js/ui.js';
+
+    const s = await guard('student');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/student/applications.html');
+    mountFooter();
+
+    const id = param('id');
+    const main = document.getElementById('main');
+
+    async function load() {
+      const { application: a } = await api(`/api/student/applications/${encodeURIComponent(id)}`);
+      const job = a.job || {};
+      main.innerHTML = `
+        <p><a href="/student/applications.html">← All my applications</a></p>
+        <div class="page-head">
+          <div>
+            <h1>${esc(job.title || 'Application')}</h1>
+            <div class="sub">${esc(job.companyName || '')} · Applied ${fmtDate(a.createdAt)}</div>
+          </div>
+          <div class="row">
+            ${badge(job.type || '')}
+            ${badge(a.status)}
+          </div>
+        </div>
+
+        <div class="grid" style="grid-template-columns: 2fr 1fr; align-items:start">
+          <div class="card">
+            <h2>Status timeline</h2>
+            <ul class="timeline">
+              ${[...a.timeline].reverse().map((t, i) => `
+                <li>
+                  <span class="dot"></span>
+                  <div class="tl-head">${badge(t.status)} <span class="when">${fmtDateTime(t.at)}</span></div>
+                  ${t.note ? `<p class="note">${esc(t.note)}</p>` : ''}
+                  <small>by ${esc(t.byName || '—')} (${esc(t.byRole || '')})</small>
+                </li>`).join('')}
+            </ul>
+          </div>
+          <div>
+            <div class="card">
+              <h2>Snapshot at application</h2>
+              <dl class="kv">
+                <dt>CGPA</dt><dd>${esc(String(a.profileSnapshot?.cgpa ?? '—'))}</dd>
+                <dt>Branch</dt><dd>${esc(a.profileSnapshot?.branch || '—')}</dd>
+                <dt>Graduation</dt><dd>${esc(String(a.profileSnapshot?.graduationYear ?? '—'))}</dd>
+                <dt>Resume</dt><dd>${a.resumeSnapshot ? `<a href="${esc(a.resumeSnapshot)}" target="_blank" rel="noopener">View resume ↗</a>` : '—'}</dd>
+              </dl>
+            </div>
+            <div class="card mt">
+              <h2>Actions</h2>
+              <a class="btn block" href="/student/job.html?id=${esc(job.id || '')}">View posting</a>
+              ${a.status !== 'Withdrawn' ? '<button class="btn danger block mt" id="withdrawBtn">Withdraw application</button>' : '<p class="muted small mt">This application was withdrawn.</p>'}
+            </div>
+          </div>
+        </div>`;
+
+      const withdrawBtn = document.getElementById('withdrawBtn');
+      if (withdrawBtn) {
+        withdrawBtn.addEventListener('click', async () => {
+          const yes = await confirmModal({
+            title: 'Withdraw application',
+            message: `Withdraw your application to ${job.title}? The recruiter will see it as withdrawn. This cannot be undone.`,
+            confirmText: 'Withdraw',
+            danger: true
+          });
+          if (!yes) return;
+          try {
+            await api(`/api/student/applications/${encodeURIComponent(a.id)}/withdraw`, { method: 'POST' });
+            toast('Application withdrawn.');
+            load();
+          } catch (err) {
+            toast(err.message, 'error');
+          }
+        });
+      }
+    }
+    await load();
+  </script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Company profile — Recruiter</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="recruiter-company">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <div class="page-head">
+      <div>
+        <h1>Company profile</h1>
+        <div class="sub">The placement cell reviews this profile before your postings become visible to students.</div>
+      </div>
+    </div>
+    <div id="statusBanner"></div>
+    <div class="card" style="max-width:820px">
+      <form id="companyForm">
+        <div class="form-grid">
+          <div class="field">
+            <label for="name">Company name <span class="req">*</span></label>
+            <input id="name" required placeholder="e.g. TechNova Labs">
+          </div>
+          <div class="field">
+            <label for="website">Website</label>
+            <input id="website" type="url" placeholder="https://…">
+          </div>
+          <div class="field">
+            <label for="industry">Industry</label>
+            <input id="industry" placeholder="e.g. Product / SaaS">
+          </div>
+          <div class="field">
+            <label for="location">Headquarters</label>
+            <input id="location" placeholder="e.g. Bengaluru, KA">
+          </div>
+          <div class="field">
+            <label for="size">Company size</label>
+            <select id="size">
+              <option value="">Select…</option>
+              <option>1-50</option><option>51-200</option><option>201-500</option>
+              <option>501-1000</option><option>1000+</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="hrPhone">HR contact phone</label>
+            <input id="hrPhone" placeholder="+91 …">
+          </div>
+          <div class="field full">
+            <label for="about">About the company</label>
+            <textarea id="about" placeholder="What you build, culture, hiring process…"></textarea>
+          </div>
+        </div>
+        <div id="formError"></div>
+        <button class="btn primary" type="submit" id="saveBtn">Save profile</button>
+        <small class="muted" id="saveHint" style="margin-left:10px"></small>
+      </form>
+    </div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard } from '/js/api.js';
+    import { esc, fmtDateTime, mountAppbar, mountFooter, toast } from '/js/ui.js';
+
+    const s = await guard('recruiter');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/recruiter/company.html');
+    mountFooter();
+
+    const { company } = await api('/api/recruiter/company');
+    const banner = document.getElementById('statusBanner');
+    const saveHint = document.getElementById('saveHint');
+
+    if (!company) {
+      banner.innerHTML = '<div class="banner warn"><b>New here?</b>Fill this in and submit — the placement cell will review your company before postings go live.</div>';
+      saveHint.textContent = 'Submitting sends your company for placement cell approval.';
+    } else if (company.status === 'pending') {
+      banner.innerHTML = `<div class="banner warn"><b>⏳ Awaiting placement cell review</b>
+        Submitted ${fmtDateTime(company.createdAt)}. You can still edit details; changes keep it in the review queue.</div>`;
+      saveHint.textContent = 'Saving keeps the profile in the review queue.';
+    } else if (company.status === 'rejected') {
+      banner.innerHTML = `<div class="banner danger"><b>✗ Rejected by the placement cell</b>
+        Reviewer: ${esc(company.decision?.byName || '—')} · ${fmtDateTime(company.decision?.at)}<br>
+        Reason: ${esc(company.decision?.reason || '—')}<br>
+        Update the profile and save to re-submit for approval.</div>`;
+      saveHint.textContent = 'Saving a rejected profile re-submits it for approval.';
+    } else {
+      banner.innerHTML = `<div class="banner success"><b>✓ Approved</b>
+        Reviewed by ${esc(company.decision?.byName || '—')} on ${fmtDateTime(company.decision?.at)}.</div>`;
+      saveHint.textContent = 'Note: major edits do not require re-approval, but the placement cell may re-review.';
+    }
+
+    const val = (id, v) => (document.getElementById(id).value = v ?? '');
+    if (company) {
+      val('name', company.name);
+      val('website', company.website);
+      val('industry', company.industry);
+      val('location', company.location);
+      val('size', company.size);
+      val('hrPhone', company.hrPhone);
+      val('about', company.about);
+    } else {
+      val('name', '');
+      val('website', '');
+    }
+
+    document.getElementById('companyForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const box = document.getElementById('formError');
+      box.innerHTML = '';
+      const v = (id) => document.getElementById(id).value.trim();
+      try {
+        const res = await api('/api/recruiter/company', {
+          method: 'PUT',
+          body: {
+            name: v('name'), website: v('website'), industry: v('industry'),
+            location: v('location'), size: v('size'), about: v('about'), hrPhone: v('hrPhone')
+          }
+        });
+        toast(res.resubmitted ? 'Saved — company re-submitted for placement cell review.' : 'Company profile saved.');
+        setTimeout(() => location.reload(), 900);
+      } catch (err) {
+        box.innerHTML = `<div class="banner danger">${esc(err.message)}</div>`;
+      }
+    });
+  </script>
+</body>
+</html>

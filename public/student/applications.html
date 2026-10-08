@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Applications — Student</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="student-applications">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <div class="page-head">
+      <div>
+        <h1>My applications</h1>
+        <div class="sub">Live pipeline status as recruiters move your candidacy forward.</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <select id="statusFilter">
+        <option value="">All statuses</option>
+        <option>Applied</option>
+        <option>Under Review</option>
+        <option>Shortlisted</option>
+        <option>Interview</option>
+        <option>Offered</option>
+        <option>Rejected</option>
+        <option>Withdrawn</option>
+      </select>
+      <span class="muted small" id="count"></span>
+    </div>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Role</th><th>Company</th><th>Type</th><th>Applied</th><th>Status</th><th>Last update</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, guard } from '/js/api.js';
+    import { esc, badge, fmtDate, fmtDateTime, mountAppbar, mountFooter } from '/js/ui.js';
+
+    const s = await guard('student');
+    if (!s) throw new Error('redirecting');
+    mountAppbar(s, '/student/applications.html');
+    mountFooter();
+
+    let apps = [];
+    const rows = document.getElementById('rows');
+    const statusFilter = document.getElementById('statusFilter');
+
+    function render() {
+      const filter = statusFilter.value;
+      const visible = filter ? apps.filter((a) => a.status === filter) : apps;
+      document.getElementById('count').textContent = `${visible.length} of ${apps.length} applications`;
+      if (!visible.length) {
+        rows.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="big">📄</div>
+          ${apps.length ? 'No applications with this status.' : 'You have not applied anywhere yet. <a href="/student/jobs.html">Browse openings →</a>'}
+        </div></td></tr>`;
+        return;
+      }
+      rows.innerHTML = visible.map((a) => `
+        <tr>
+          <td><b>${esc(a.job ? a.job.title : '—')}</b></td>
+          <td>${esc(a.job ? a.job.companyName : '—')}</td>
+          <td>${badge(a.job ? a.job.type : '')}</td>
+          <td class="nowrap">${fmtDate(a.createdAt)}</td>
+          <td>${badge(a.status)}</td>
+          <td class="nowrap">${fmtDateTime(a.updatedAt)}</td>
+          <td><a class="btn sm" href="/student/application.html?id=${esc(a.id)}">Track</a></td>
+        </tr>`).join('');
+    }
+
+    statusFilter.addEventListener('change', render);
+    const data = await api('/api/student/applications');
+    apps = data.applications;
+    render();
+  </script>
+</body>
+</html>

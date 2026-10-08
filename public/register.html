@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Register — CampusConnect Placement Portal</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-page="register">
+  <header id="appbar" class="appbar"></header>
+  <main class="container">
+    <div class="auth-wrap" style="align-items:flex-start">
+      <div class="auth-card" style="max-width:640px">
+        <div class="hero">
+          <h1>Create your account</h1>
+          <p>Students get instant access. Recruiter companies go to the placement cell for approval before postings go live.</p>
+        </div>
+        <div class="card">
+          <div class="role-tabs" role="tablist">
+            <button type="button" id="tabStudent" class="active">🎓 Student Applicant</button>
+            <button type="button" id="tabRecruiter">🏢 Company Recruiter</button>
+          </div>
+
+          <form id="regForm" novalidate>
+            <div class="form-grid">
+              <div class="field">
+                <label for="name">Full name <span class="req">*</span></label>
+                <input id="name" required placeholder="e.g. Ananya Rao">
+              </div>
+              <div class="field">
+                <label for="email">Email <span class="req">*</span></label>
+                <input id="email" type="email" required placeholder="you@campus.edu">
+              </div>
+              <div class="field">
+                <label for="password">Password <span class="req">*</span></label>
+                <input id="password" type="password" required minlength="6" placeholder="At least 6 characters">
+              </div>
+              <div class="field" id="fieldRoll">
+                <label for="rollNo">Roll number</label>
+                <input id="rollNo" placeholder="e.g. CS21B102">
+              </div>
+
+              <div class="field" id="fieldBranch">
+                <label for="branch">Department / branch</label>
+                <select id="branch"><option value="">Select…</option></select>
+              </div>
+              <div class="field" id="fieldCgpa">
+                <label for="cgpa">CGPA (out of 10)</label>
+                <input id="cgpa" type="number" step="0.01" min="0" max="10" placeholder="e.g. 8.4">
+              </div>
+              <div class="field" id="fieldGrad">
+                <label for="graduationYear">Graduation year</label>
+                <input id="graduationYear" type="number" min="2024" max="2032" placeholder="e.g. 2026">
+              </div>
+              <div class="field" id="fieldResume">
+                <label for="resumeUrl">Resume link</label>
+                <input id="resumeUrl" type="url" placeholder="https://drive.google.com/…">
+                <div class="hint">Used by recruiters during screening — a valid http(s) link.</div>
+              </div>
+
+              <div class="field" id="fieldCompanyName" hidden>
+                <label for="companyName">Company name <span class="req">*</span></label>
+                <input id="companyName" placeholder="e.g. TechNova Labs">
+              </div>
+              <div class="field" id="fieldWebsite" hidden>
+                <label for="website">Company website</label>
+                <input id="website" type="url" placeholder="https://…">
+              </div>
+              <div class="field" id="fieldIndustry" hidden>
+                <label for="industry">Industry</label>
+                <input id="industry" placeholder="e.g. Product / SaaS">
+              </div>
+              <div class="field" id="fieldLocation" hidden>
+                <label for="location">Headquarters</label>
+                <input id="location" placeholder="e.g. Bengaluru, KA">
+              </div>
+            </div>
+
+            <div id="regError"></div>
+            <button class="btn primary block" type="submit" id="regBtn">Create account</button>
+          </form>
+          <p class="small mt" style="margin-bottom:0">Already registered? <a href="/">Sign in</a></p>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer id="footer" class="footer"></footer>
+  <script type="module">
+    import { api, dashboardFor } from '/js/api.js';
+    import { esc, mountFooter, toast } from '/js/ui.js';
+
+    mountFooter();
+
+    let role = 'student';
+    const meta = await api('/api/meta');
+    const branchSel = document.getElementById('branch');
+    for (const b of meta.branches) branchSel.insertAdjacentHTML('beforeend', `<option value="${esc(b)}">${esc(b)}</option>`);
+
+    const tabS = document.getElementById('tabStudent');
+    const tabR = document.getElementById('tabRecruiter');
+    const studentFields = ['fieldRoll', 'fieldBranch', 'fieldCgpa', 'fieldGrad', 'fieldResume'];
+    const recruiterFields = ['fieldCompanyName', 'fieldWebsite', 'fieldIndustry', 'fieldLocation'];
+
+    function setRole(next) {
+      role = next;
+      tabS.classList.toggle('active', next === 'student');
+      tabR.classList.toggle('active', next === 'recruiter');
+      studentFields.forEach((id) => (document.getElementById(id).hidden = next !== 'student'));
+      recruiterFields.forEach((id) => (document.getElementById(id).hidden = next !== 'recruiter'));
+    }
+    tabS.addEventListener('click', () => setRole('student'));
+    tabR.addEventListener('click', () => setRole('recruiter'));
+
+    document.getElementById('regForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const box = document.getElementById('regError');
+      const btn = document.getElementById('regBtn');
+      box.innerHTML = '';
+      btn.disabled = true;
+      const val = (id) => document.getElementById(id).value.trim();
+      const body = { role, name: val('name'), email: val('email'), password: document.getElementById('password').value };
+      if (role === 'student') {
+        body.rollNo = val('rollNo');
+        body.branch = val('branch');
+        body.cgpa = val('cgpa');
+        body.graduationYear = val('graduationYear');
+        body.resumeUrl = val('resumeUrl');
+      } else {
+        body.companyName = val('companyName');
+        body.website = val('website');
+        body.industry = val('industry');
+        body.location = val('location');
+      }
+      try {
+        const s = await api('/api/auth/register', { method: 'POST', body });
+        if (role === 'recruiter') {
+          toast('Account created — your company is now in the placement cell review queue.', 'success', 5200);
+          setTimeout(() => (location.href = '/recruiter/company.html'), 1200);
+        } else {
+          location.href = '/student/profile.html?welcome=1';
+        }
+      } catch (err) {
+        box.innerHTML = `<div class="banner danger">${esc(err.message)}</div>`;
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

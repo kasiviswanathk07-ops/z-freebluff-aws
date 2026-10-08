@@ -1,0 +1,28 @@
+{
+  "name": "campus-placement-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Campus Placement & Internship Portal - a role-based recruitment platform for students, recruiters and the placement cell (plain HTML/CSS/JS + Node/Express JSON API).",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "seed": "node server/seed.js",
+    "reset": "node server/seed.js --fresh",
+    "check": "node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "campus-placement",
+    "internship-portal",
+    "express",
+    "vanilla-js"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "express": "^4.22.0"
+  }
+}
